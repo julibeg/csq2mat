@@ -1,0 +1,3 @@
+# TODO
+
+*) check if method for getting intergenic regions gives correct results (by cross-checking with portion <https://stackoverflow.com/a/61055332/8106901> or with a more robust method)
