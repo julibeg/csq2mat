@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# type:ignore
 """
 Takes a VCF or BCF file (must have been annotated with `bcftools csq`), a
 GFF file (ideally the one that has been used for the annotation), and the

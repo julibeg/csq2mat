@@ -1,0 +1,9 @@
+{
+    "spellchecker.ignoreWordsList": [
+        "CSQs",
+        "dict",
+        "DataFrame",
+        "missense"
+    ],
+    "jupyter.jupyterServerType": "local"
+}
