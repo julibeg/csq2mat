@@ -8,6 +8,7 @@ import re
 import io
 import multiprocessing
 from tqdm import tqdm
+import funcs
 
 # %% ###################################################################
 # parse the GFF
@@ -22,42 +23,10 @@ vcf_file = (
 )
 # %% ###################################################################
 # parse the GFF to get the start and end coordinates of all protein-coding genes
-genes = pd.DataFrame(columns=["name", "start", "end"])
-with open(gff_file, "r") as f:
-    for line in f:
-        if line.startswith("#"):
-            continue
-        # we are only interested in 'gene' and 'CDS' entries
-        if (line := line.strip().split("\t"))[2] not in ("gene", "CDS"):
-            continue
-        _, _, typ, start, end, *_, desc = line
-        desc = dict(x.split("=") for x in desc.split(";"))
-        if typ == "gene":
-            # if the line represents a gene entry, add the gene ID and name to the
-            # DataFrame
-            gene_id = desc["gene_id"]
-            gene_name = desc.get("Name", gene_id)
-            genes.loc[gene_id, "name"] = gene_name
-        elif typ == "CDS":
-            # This is the CDS of the current gene entry --> add start and end to the
-            # DataFrame
-            prot_id = desc["protein_id"]
-            genes.loc[prot_id, ["start", "end"]] = int(start), int(end)
-genes.sort_values("start", inplace=True)
+genes = funcs.parse_gff(gff_file)
 genes
 # %% ###################################################################
-# parse VCF header to get the name of the chromosome and the sample IDs
-header = subprocess.run(
-    ["bcftools", "view", "-h", vcf_file], capture_output=True, text=True
-).stdout
-for line in header.strip().split("\n"):
-    if "contig=" in line:
-        # unpacking into a tuple of length 1 makes sure that there was only one match
-        (chr_name,) = re.findall("ID=(.*?),", line)
-        (chr_length,) = re.findall("length=([0-9]+)", line)
-        chr_length = int(chr_length)
-# the last line is the line holding the sample IDs
-samples = line.split("\t")[9:]
+chr_name, chr_length, samples = funcs.parse_vcf(vcf_file)
 # %% ###################################################################
 # find all intergenic regions (intervals not covered by any protein-coding gene)
 
