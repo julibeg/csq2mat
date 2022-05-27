@@ -96,6 +96,10 @@ intergenic_regions = (
 )
 intergenic_regions
 # %% ###################################################################
+# write genes + intergenic regions to CSV for checking them with bedtools
+# genes.to_csv('check-intergenic-regions/genes.csv')
+# intergenic_regions.to_csv('check-intergenic-regions/intergenic_regions.csv')
+# %% ###################################################################
 # process the intergenic regions
 
 
@@ -140,9 +144,16 @@ def process_intergenic(start, end):
     )
     if (
         not res["csq"]
-        .apply(lambda x: x == "." or "non_coding" in x or "coding_sequence" in x)
+        .apply(
+            lambda x: x == "."
+            or "non_coding" in x
+            or "coding_sequence" in x
+        )
         .all()
     ):
+        # TODO: instead of permitting "non_coding" and "coding_sequence" consequences in
+        # the intergenic regions, we could write all non-"." CSQs out to a logfile (and
+        # not throw any error at all)
         bad_vars = res.query('csq != "."').index
         raise BCFtoolsError(
             f"INFO/CSQ in supposed intergenic region ({region_str}) was not empty! "
@@ -162,9 +173,10 @@ with multiprocessing.Pool(10) as pool, tqdm(total=len(intergenic_regions)) as pb
         pool.apply_async(process_intergenic, args=(start, end), callback=pbar.update(1))
         for start, end in intergenic_regions.values
     ]
-    results = [r.get() for r in results]
-
+    results = pd.concat(r.get() for r in results)
 results
+# %% ###################################################################
+bla = pd.concat(results)
 # %% ###################################################################
 pos = 1499211
 intergenic_regions.query("start <= @pos and end >= @pos")
