@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import List
+from typing import List, Tuple
 import subprocess
 import pathlib
 import re
@@ -36,3 +36,25 @@ def parse_gff(gff_fname: str) -> pd.DataFrame:
                 genes.loc[prot_id, ["start", "end"]] = int(start), int(end)
     genes[['start', 'end']] = genes[['start', 'end']].astype(int)
     return genes.sort_values("start")
+
+
+def parse_VCF_header(vcf_file: str) -> Tuple[str, int, List[str]]
+    """
+    Parse the header of a bacterial VCF file to get the name and length of the
+    chromosome as well as the sample IDs.
+    """
+    header = subprocess.run(
+        ["bcftools", "view", "-h", vcf_file], capture_output=True, text=True
+    ).stdout
+    for line in header.strip().split("\n"):
+        if "contig=" in line:
+            # unpacking into a tuple of length 1 makes sure that there was only one
+            # match
+            (chr_name,) = re.findall("ID=(.*?),", line)
+            (chr_length,) = re.findall("length=([0-9]+)", line)
+            chr_length = int(chr_length)
+    # the last line is the line holding the sample IDs
+    samples = line.split("\t")[9:]
+    return chr_name, chr_length, samples
+
+
