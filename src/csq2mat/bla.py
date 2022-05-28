@@ -35,7 +35,8 @@ res = pd.read_csv(
 )
 print(res)
 # %% ###################################################################
-final = []
+other_variants = []
+missense_variants = {}
 
 
 def index2bitmask(n: int) -> int:
@@ -52,7 +53,7 @@ for _, entry in res.iterrows():
         var_id = "non_coding_" + "_".join(
             entry[["CHROM", "POS", "REF", "ALT"]].astype(str)
         )
-        final.append(
+        other_variants.append(
             pd.Series(
                 entry[samples].apply(lambda x: x[0]).replace(".", 3),
                 index=samples,
@@ -73,7 +74,7 @@ for _, entry in res.iterrows():
             csq, gene_name, *_, aa_change, _ = csq.split("|")
             if csq == "synonymous":
                 var_id = f"synonymous_{gene_name}_{aa_change}"
-                final.append(
+                other_variants.append(
                     pd.Series(
                         entry[samples].apply(lambda x: x[0]).replace(".", 3),
                         index=samples,
@@ -87,25 +88,25 @@ for _, entry in res.iterrows():
                 var_id = f"missense_{gene_name}_{ref_aa}"
                 # get the genotypes ('1' if the sample has the GT and the consequence
                 # with the correct bitmask)
-                final.append(
-                    pd.Series(
-                        entry[samples].apply(
+                 gts = entry[samples].apply(
                             lambda x: 3
                             if x[0] == "."
                             else 1
                             if x[0] == "1" and x[-1] == bitmask
                             else 0
-                        ),
-                        index=samples,
-                        name=var_id,
-                        dtype=pd.SparseDtype(np.int8, 0),
-                    )
-                )
+                        )
+                # check if we have already encountered a missense variant in the same
+                # codon
+                if var_id in missense_variants:
+                    missense_variants[var_id] |= gts
+                else:
+                    missense_variants[var_id] = gts
+                # THIS NEEDS TO BE TESTED PROPERLY!
             else:
                 var_id = "other_" + "_".join(
                     entry[["CHROM", "POS", "REF", "ALT"]].astype(str)
                 ) + '_' + csq
-                final.append(
+                other_variants.append(
                     pd.Series(
                         entry[samples].apply(lambda x: x[0]).replace(".", 3),
                         index=samples,
