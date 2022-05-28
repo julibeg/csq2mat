@@ -134,7 +134,7 @@ for _, entry in res.iterrows():
                 if int(x.split(":")[1]) == bitmask
                 else 0
             )
-            # .astype(pd.SparseDtype(np.int8, 0))
+            .astype(pd.SparseDtype(int, 0))
         )
         # split the CSQ field
         csq, gene_name, *_, aa_change, _ = csq.split("|")
@@ -249,7 +249,7 @@ final
 # %% ###################################################################
 bla = pd.Series([0, 3, 0], dtype=pd.SparseDtype(int, 0))
 blu = pd.Series([0, 1, 3], dtype=pd.SparseDtype(int, 0))
-bla | blu
+(bla | blu).values
 # %% ###################################################################
 
 
