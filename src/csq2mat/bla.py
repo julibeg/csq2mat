@@ -10,6 +10,7 @@ import multiprocessing
 from tqdm import tqdm
 import funcs
 
+
 # %% ###################################################################
 # parse the GFF
 gff_file = (
@@ -19,178 +20,118 @@ gff_file = (
 vcf_file = (
     f"{pathlib.Path(__file__).resolve().parent.parent.parent}"
     # "/test-data/amikacin_split_no_PE_PPE_filtered_csq.bcf.gz"
-    "/test-data/test_subset_csq.bcf.gz"
+    "/test-data/test_subset_csq.vcf"
 )
 # %% ###################################################################
-# parse the GFF to get the start and end coordinates of all protein-coding genes
-genes = funcs.parse_gff(gff_file)
-genes
+# parse the VCF header
+chr_name, chr_length, samples = funcs.parse_VCF_header(vcf_file)
 # %% ###################################################################
-chr_name, chr_length, samples = funcs.parse_vcf(vcf_file)
-# %% ###################################################################
-# find all intergenic regions (intervals not covered by any protein-coding gene)
-
-
-def find_intergenic_regions(genes):
-    old_end = 1
-    old_gene_id = f"{chr_name}_Start"
-    intergenic_regions = []
-    for gene_id, gene in genes.iterrows():
-        if gene["start"] > old_end:
-            # the intervals taken by `bcftools -r` are inclusive --> adjust the
-            # coordinates of the intergenic regions accordingly (i.e. +1 and -1 for
-            # start and end)
-            intergenic_regions.append(
-                (
-                    old_gene_id,
-                    gene_id,
-                    old_end + 1,
-                    gene["start"] - 1,
-                )
-            )
-        old_gene_id = gene_id
-        old_end = max(old_end, gene["end"])
-    if chr_length > old_end:
-        intergenic_regions.append((gene_id, f"{chr_name}_End", old_end + 1, chr_length))
-    return intergenic_regions
-
-
-intergenic_regions = (
-    pd.DataFrame(
-        find_intergenic_regions(genes),
-        columns=["upstream_gene", "downstream_gene", "start", "end"],
-    )
-    .set_index(["upstream_gene", "downstream_gene"])
-    .astype(int)
-)
-intergenic_regions
-# %% ###################################################################
-# write genes + intergenic regions to CSV for checking them with bedtools
-# genes.to_csv('check-intergenic-regions/genes.csv')
-# intergenic_regions.to_csv('check-intergenic-regions/intergenic_regions.csv')
-# %% ###################################################################
-# process the intergenic regions
-
-
-class BCFtoolsError(Exception):
-    def __init__(self, msg):
-        super().__init__(msg)
-
-    @classmethod
-    def from_CalledProcessError(cls, error):
-        msg = f"{error.__str__()}\nSTDOUT: {error.stdout}\nSTDERR: {error.stderr}"
-        return cls(msg)
-
-
-def process_intergenic(start, end):
-    query_fmt_str = "%CHROM\t%POS\t%REF\t%ALT\t%INFO/BCSQ[\t%GT]\n"
-    region_str = f"{chr_name}:{start}-{end}"
-    try:
-        p = subprocess.run(
-            [
-                "bcftools",
-                "query",
-                "-f",
-                query_fmt_str,
-                vcf_file,
-                "-r",
-                region_str,
-                "--regions-overlap",
-                "pos",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        raise BCFtoolsError.from_CalledProcessError(e)
-    res = pd.read_csv(
-        io.StringIO(p.stdout.strip()),
-        sep="\t",
-        header=None,
-        names=["chr", "pos", "ref", "alt", "csq"] + samples,
-        index_col=[0, 1, 2, 3],
-    )
-    if (
-        not res["csq"]
-        .apply(
-            lambda x: x == "."
-            or "non_coding" in x
-            or "coding_sequence" in x
-        )
-        .all()
-    ):
-        # TODO: instead of permitting "non_coding" and "coding_sequence" consequences in
-        # the intergenic regions, we could write all non-"." CSQs out to a logfile (and
-        # not throw any error at all)
-        bad_vars = res.query('csq != "."').index
-        raise BCFtoolsError(
-            f"INFO/CSQ in supposed intergenic region ({region_str}) was not empty! "
-            + "The variants in question were: "
-            + f'{list(("_".join(str(x) for x in idx) for idx in bad_vars))}.'
-        )
-    res = (
-        res.drop(columns="csq")
-        .applymap(lambda x: float(x[0]) if x[0] != "." else np.nan)
-        .astype(pd.SparseDtype(float, 0))
-    )
-    return res
-
-
-with multiprocessing.Pool(10) as pool, tqdm(total=len(intergenic_regions)) as pbar:
-    results = [
-        pool.apply_async(process_intergenic, args=(start, end), callback=pbar.update(1))
-        for start, end in intergenic_regions.values
-    ]
-    results = pd.concat(r.get() for r in results)
-results
-# %% ###################################################################
-bla = pd.concat(results)
-# %% ###################################################################
-pos = 1499211
-intergenic_regions.query("start <= @pos and end >= @pos")
-genes.loc[["Rv1329c", "Rv1330c"]]
-# %% ###################################################################
-pos = 1499211
-genes.index.get_loc(genes.query("start <= @pos and end >= @pos").index[0])
-genes.iloc[235:240]
-# %% ###################################################################
-find_intergenic_regions(genes.iloc[194:198])
-# %% ###################################################################
-start, end = intergenic_regions[0]
-query_fmt_str = "%POS\t%REF\t%ALT\t%INFO/BCSQ\t[%GT,]\n"
-region_str = f"{chr_name}:{start}-{end}"
-try:
-    p = subprocess.run(
-        [
-            "bcftools",
-            "query",
-            "-f",
-            query_fmt_str,
-            vcf_file,
-            "-rx",
-            region_str,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-except subprocess.CalledProcessError as e:
-    bla = e
-    print(dir(e))
-    pass
-# print(p.stdout.strip())
+query = "%CHROM\t%POS\t%REF\t%ALT\t%INFO/BCSQ[\t%GT:%BCSQ]\n"
 res = pd.read_csv(
-    io.StringIO(p.stdout.strip()),
+    io.StringIO(funcs.run_bcftools_cmd(["query", "-f", query], vcf_file)),
     sep="\t",
-    names=["pos", "ref", "alt", "csq", "gt"],
-    index_col=[0, 1, 2],
+    header=None,
+    names=["CHROM", "POS", "REF", "ALT", "CSQ", *samples],
 )
-res["csq"] = "bla"
-if not (res["csq"] == ".").all():
-    bad_vars = res.query('csq != "."').index
-    raise ValueError(
-        f"Found string in INFO/CSQ in supposed intergenic region ({region_str}):"
-        + "The variants in question were:\n"
-        + "\n".join(",".join(str(x) for x in idx) for idx in bad_vars)
-    )
+print(res)
+# %% ###################################################################
+final = []
+
+
+def index2bitmask(n: int) -> int:
+    """
+    Returns the integer corresponding to the bitmask used for the n-th consequence in
+    the `INFO/BCSQ` field for sample having the homozygous genotype (i.e. `3` for the
+    first consequence, `12` for the second, `48` for the third, etc.).
+    """
+    return 3 << (2 * n)
+
+
+for _, entry in res.iterrows():
+    if entry["CSQ"] == ".":
+        var_id = "non_coding_" + "_".join(
+            entry[["CHROM", "POS", "REF", "ALT"]].astype(str)
+        )
+        final.append(
+            pd.Series(
+                entry[samples].apply(lambda x: x[0]).replace(".", 3),
+                index=samples,
+                name=var_id,
+                dtype=pd.SparseDtype(np.int8, 0),
+            )
+        )
+    else:
+        # there might be more than one consequence in the CSQ field --> split them
+        csqs = entry["CSQ"].split(",")
+        for i, csq in enumerate(csqs):
+            # skip if part of a compound consequence
+            if csq.startswith("@"):
+                continue
+            # get the bitmask corresponding to this consequence (make sure that it's a
+            # string; otherwise the comparison below will fail)
+            bitmask = str(index2bitmask(i))
+            csq, gene_name, *_, aa_change, _ = csq.split("|")
+            if csq == "synonymous":
+                var_id = f"synonymous_{gene_name}_{aa_change}"
+                final.append(
+                    pd.Series(
+                        entry[samples].apply(lambda x: x[0]).replace(".", 3),
+                        index=samples,
+                        name=var_id,
+                        dtype=pd.SparseDtype(np.int8, 0),
+                    )
+                )
+            elif csq == "missense":
+                # create the variant ID
+                ref_aa = aa_change.split(">")[0]
+                var_id = f"missense_{gene_name}_{ref_aa}"
+                # get the genotypes ('1' if the sample has the GT and the consequence
+                # with the correct bitmask)
+                final.append(
+                    pd.Series(
+                        entry[samples].apply(
+                            lambda x: 3
+                            if x[0] == "."
+                            else 1
+                            if x[0] == "1" and x[-1] == bitmask
+                            else 0
+                        ),
+                        index=samples,
+                        name=var_id,
+                        dtype=pd.SparseDtype(np.int8, 0),
+                    )
+                )
+            else:
+                var_id = "other_" + "_".join(
+                    entry[["CHROM", "POS", "REF", "ALT"]].astype(str)
+                ) + '_' + csq
+                final.append(
+                    pd.Series(
+                        entry[samples].apply(lambda x: x[0]).replace(".", 3),
+                        index=samples,
+                        name=var_id,
+                        dtype=pd.SparseDtype(np.int8, 0),
+                    )
+                )
+
+
+final = pd.DataFrame(final)
+final
+# %% ###################################################################
+bla = pd.Series([0, 1, 0])
+blu = pd.Series([0, 1, pd.NA], dtype=pd.SparseDtype(float, 0))
+bla | blu
+# %% ###################################################################
+
+
+def process_entry(row):
+    if row["CSQ"] == ".":
+        return row[samples].apply(lambda x: x[0])
+    else:
+        return row[samples].apply(lambda x: x[-1] if x[0] != "." else ".")
+
+
+res2 = res.copy()
+res2[samples] = res2.apply(process_entry, axis=1)
+print(res[samples])
+res2[samples]
