@@ -44,7 +44,7 @@ with open(gff_file, "r") as f:
             prot_id = desc["protein_id"]
             genes.loc[prot_id, ["start", "end"]] = int(start), int(end)
 genes.sort_values("start", inplace=True)
-genes
+genes[['start', 'end']] = genes[['start', 'end']].astype(int)
 # %% ###################################################################
 # parse VCF header to get the name of the chromosome and the sample IDs
 header = subprocess.run(
