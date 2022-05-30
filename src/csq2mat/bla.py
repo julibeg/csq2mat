@@ -41,6 +41,8 @@ res = pd.read_csv(
 )
 print(res)
 # %% ###################################################################
+
+
 def csq_index_to_bitmask(n: int) -> int:
     """
     Returns the integer corresponding to the bitmask used for the n-th consequence in
@@ -48,9 +50,6 @@ def csq_index_to_bitmask(n: int) -> int:
     first consequence, `12` for the second, `48` for the third, etc.).
     """
     return 3 << (2 * n)
-
-
-# %% ###################################################################
 
 
 def csq_bitmasks() -> int:
@@ -62,12 +61,6 @@ def csq_bitmasks() -> int:
     while True:
         yield 3 << (2 * n)
         n += 1
-
-
-# %% ###################################################################
-other_variants = []
-missense_variants = {}
-LOF_variants = {}
 
 
 def is_LOF(csq: str, aa_change: str) -> bool:
@@ -110,6 +103,11 @@ def is_LOF(csq: str, aa_change: str) -> bool:
     return False
 
 
+# %% ###################################################################
+other_variants = []
+missense_variants = {}
+LOF_variants = {}
+
 for _, entry in res.iterrows():
     # there might be more than one consequence in the CSQ field --> split them and
     # handle each consequence individually
@@ -147,8 +145,8 @@ for _, entry in res.iterrows():
                 LOF_variants[var_id] |= has_csq
             else:
                 LOF_variants[var_id] = has_csq
-        # now process the missense consequences
         elif csq == "missense":
+            # now process the missense consequences
             ref_aa = aa_change.split(">")[0]
             var_id = f"missense_{gene_name}_{ref_aa}"
             # check if we have already encountered a missense variant in the same
@@ -157,110 +155,30 @@ for _, entry in res.iterrows():
                 missense_variants[var_id] |= has_csq
             else:
                 missense_variants[var_id] = has_csq
-        # now, let's handle the rest
         else:
-            pass
+            # now, let's handle the rest (synonymous, non-coding, and non-missense CDS
+            # variants)
+            if csq == "synonymous":
+                var_id = f"synonymous_{gene_name}_{aa_change}"
+            elif csq == '.':
+                var_id = "non_coding_" + "_".join(
+                    entry[["CHROM", "POS", "REF", "ALT"]].astype(str)
+                )
+            else:
+                var_id = (
+                    "other_"
+                    + "_".join(entry[["CHROM", "POS", "REF", "ALT"]].astype(str))
+                    + "_"
+                    + csq
+                )
+            has_csq.name = var_id
+            other_variants.append(has_csq)
 
 
-res[["CSQ"] + samples]
+print(res[["CSQ"] + samples])
 final = pd.concat(
     [*other_variants, pd.DataFrame(LOF_variants), pd.DataFrame(missense_variants)],
     axis=1,
 ).T
 final
 
-# %% ###################################################################
-
-
-# for _, entry in res.iterrows():
-#     # there might be more than one consequence in the CSQ field --> split them
-#     csqs = entry["CSQ"].split(",")
-#     for i, csq in enumerate(csqs):
-#         # skip if part of a compound consequence (the compound consequence will be
-#         # handled at some point anyway)
-#         if csq.startswith("@"):
-#             continue
-#         # get the bitmask corresponding to this consequence (make sure that it's a
-#         # string; otherwise the comparison below will fail)
-#         bitmask = str(index2bitmask(i))
-#         # split the CSQ field
-#         csq, gene_name, *_, aa_change, _ = csq.split("|")
-#         # get a vector with `1`s for the samples having this particular consequence
-#         has_csq = entry[samples].apply(
-#             # we use `3` to represent non-calls --> this also works with the binary
-#             # `OR` operation in the missense section below (`3 | 0` and `3 | 1` will
-#             # both give `3`)
-#             lambda x: 3
-#             if x[0] == "."
-#             else 1
-#             if x.split(":")[1] == bitmask
-#             else 0
-#         ).astype(pd.SparseDtype(np.int8, 0))
-#         # now handle the different types of consequences. For non-coding, synonymous,
-#         # and non-missense CDS variants the process will be the same and only the
-#         # variant ID in the output will change. We'll start with non-coding
-#         if csq == '.':
-#             var_id = "non_coding_" + "_".join(
-#                 entry[["CHROM", "POS", "REF", "ALT"]].astype(str)
-#             )
-#         # now synonymous
-#         elif csq == "synonymous":
-#             var_id = f"synonymous_{gene_name}_{aa_change}"
-#         has_csq.name = var_id
-#         other_variants.append(has_csq)
-#         elif csq != "missense":
-
-#         # now handle LOF variants
-#         # elif
-#         else:
-#             var_id = (
-#                 "other_"
-#                 + "_".join(entry[["CHROM", "POS", "REF", "ALT"]].astype(str))
-#                 + "_"
-#                 + csq
-#             )
-
-#             # create the variant ID
-#             ref_aa = aa_change.split(">")[0]
-#             var_id = f"missense_{gene_name}_{ref_aa}"
-#             # get the genotypes ('1' if the sample has the GT and the consequence
-#             # with the correct bitmask)
-#             gts = entry[samples].apply(
-#                 # we use `3` to represent massing values --> this also works with
-#                 # the binary `OR` operation below (`3 | 0` and `3 | 1` will both
-#                 # give `3`)
-#                 lambda x: 3
-#                 if x[0] == "."
-#                 else 1
-#                 if x[0] == "1" and x.split(":")[1] == bitmask
-#                 else 0
-#             )
-#             # check if we have already encountered a missense variant in the same
-#             # codon --> if so, combine with the current variant
-#             if var_id in missense_variants:
-#                 missense_variants[var_id] |= gts
-#             else:
-#                 missense_variants[var_id] = gts
-
-
-res[["CSQ"] + samples]
-final = pd.concat([*other_variants, pd.DataFrame(missense_variants)], axis=1).T
-final
-# %% ###################################################################
-bla = pd.Series([0, 3, 0], dtype=pd.SparseDtype(int, 0))
-blu = pd.Series([0, 1, 3], dtype=pd.SparseDtype(int, 0))
-(bla | blu).values
-# %% ###################################################################
-
-
-def process_entry(row):
-    if row["CSQ"] == ".":
-        return row[samples].apply(lambda x: x[0])
-    else:
-        return row[samples].apply(lambda x: x[-1] if x[0] != "." else ".")
-
-
-res2 = res.copy()
-res2[samples] = res2.apply(process_entry, axis=1)
-print(res[samples])
-res2[samples]
